@@ -1,7 +1,7 @@
 # mtv (Markdown to Video/Cast)
 
 ![Go Version](https://img.shields.io/badge/go-1.21+-00ADD8?style=flat-square&logo=go)
-![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)
+![License](https://img.shields.io/badge/license-GNU-green?style=flat-square)
 ![Build Status](https://img.shields.io/badge/build-passing-brightgreen?style=flat-square)
 ![Asciinema](https://img.shields.io/badge/platform-asciinema-red?style=flat-square)
 
@@ -104,4 +104,4 @@ asciinema play demo.cast
 ```
 
 ## License
-MIT
+GNU V3
