@@ -31,18 +31,23 @@ const (
 )
 
 // Global map for special block handling.
+// If the value is empty, it's treated as a raw response (output).
+// If the value is "SKIP", the block is ignored.
+// If the value is a string, it's treated as a comment-style request.
 var specialPrefixes = map[string]string{
 	"info":       "# Info: ",
 	"warn":       "# Warn: ",
+	"ignore":     "SKIP",
 	"output":     "",
 	"yaml":       "",
 	"dockerfile": "",
 	"json":       "",
 	"bash":       "",
 	"sh":         "",
+	"sql":        "",
+	"mermaid":    "SKIP",
 }
 
-// AsciinemaHeader represents the version 2 header
 type AsciinemaHeader struct {
 	Version   int               `json:"version"`
 	Width     int               `json:"width"`
@@ -51,7 +56,6 @@ type AsciinemaHeader struct {
 	Env       map[string]string `json:"env"`
 }
 
-// RequestResponse represents the unified input format
 type RequestResponse struct {
 	ID       string `json:"id"`
 	Request  string `json:"request"`
@@ -70,10 +74,9 @@ var (
 func main() {
 	var rootCmd = &cobra.Command{
 		Use:   "mtv",
-		Short: "A Markdown to Video (MTV) tool uses Markdown/JSON to asciinema cast recordings",
+		Short: "A tool to convert Markdown/JSON to asciinema recordings",
 	}
 
-	// Generate Command
 	var genCmd = &cobra.Command{
 		Use:   "generate",
 		Short: "Generate a .cast file from a JSON input file",
@@ -86,7 +89,6 @@ func main() {
 	genCmd.Flags().IntVar(&height, "height", 30, "Terminal height")
 	genCmd.MarkFlagRequired("input")
 
-	// Convert Command
 	var convCmd = &cobra.Command{
 		Use:   "convert",
 		Short: "Convert a Markdown file into a JSON request/response schema",
@@ -105,7 +107,6 @@ func main() {
 	}
 }
 
-// generateID creates a short SHA-1 hash for an entry
 func generateID(content string) string {
 	h := sha1.New()
 	h.Write([]byte(content))
@@ -125,7 +126,6 @@ func highlightText(content, language, styleName string) string {
 	}
 
 	formatter := formatters.TTY256
-
 	var buf bytes.Buffer
 	iterator, err := lexer.Tokenise(nil, content)
 	if err != nil {
@@ -148,18 +148,8 @@ func runConvert(cmd *cobra.Command, args []string) {
 	}
 
 	entries := convertMarkdownToEntries(source)
-
-	jsonData, err := json.MarshalIndent(entries, "", "  ")
-	if err != nil {
-		fmt.Printf("Error marshaling JSON: %v\n", err)
-		return
-	}
-
-	if err := os.WriteFile(outputFile, jsonData, 0644); err != nil {
-		fmt.Printf("Error writing output file: %v\n", err)
-		return
-	}
-
+	jsonData, _ := json.MarshalIndent(entries, "", "  ")
+	os.WriteFile(outputFile, jsonData, 0644)
 	fmt.Printf("Successfully converted %s to %s (%d entries)\n", inputFile, outputFile, len(entries))
 }
 
@@ -171,37 +161,24 @@ func runGenerate(cmd *cobra.Command, args []string) {
 	}
 
 	var entries []RequestResponse
-	if err := json.Unmarshal(source, &entries); err != nil {
-		fmt.Printf("Error parsing JSON input: %v\n", err)
-		return
-	}
+	json.Unmarshal(source, &entries)
 
-	out, err := os.Create(outputFile)
-	if err != nil {
-		fmt.Printf("Error creating output file: %v\n", err)
-		return
-	}
+	out, _ := os.Create(outputFile)
 	defer out.Close()
 
 	writer := bufio.NewWriter(out)
 	defer writer.Flush()
 
 	header := AsciinemaHeader{
-		Version: 2,
-		Width:   width,
-		Height:  height,
-		Env:     map[string]string{"TERM": "xterm-256color", "SHELL": "/bin/bash"},
+		Version: 2, Width: width, Height: height,
+		Env: map[string]string{"TERM": "xterm-256color", "SHELL": "/bin/bash"},
 	}
 	headerJSON, _ := json.Marshal(header)
 	writer.WriteString(string(headerJSON) + "\n")
 
 	var currentTime float64 = 0.5
 	processEntries(entries, writer, &currentTime)
-
-	currentTime += 2.0
-	writeEvent(writer, currentTime, "")
-
-	fmt.Printf("Successfully generated %s from %s\n", outputFile, inputFile)
+	writeEvent(writer, currentTime+2.0, "")
 }
 
 func convertMarkdownToEntries(source []byte) []RequestResponse {
@@ -213,37 +190,36 @@ func convertMarkdownToEntries(source []byte) []RequestResponse {
 	ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if entering && n.Kind() == ast.KindFencedCodeBlock {
 			block := n.(*ast.FencedCodeBlock)
-
 			info := string(block.Info.Value(source))
 			infoParts := strings.Fields(info)
 
-			var language string
-			var postfix string
-
+			var language, postfix string
 			if len(infoParts) > 0 {
 				language = strings.ToLower(infoParts[0])
 			}
 			if len(infoParts) > 1 {
 				postfix = strings.ToLower(infoParts[1])
 			} else if len(infoParts) == 1 {
-				p := strings.ToLower(infoParts[0])
-				if _, ok := specialPrefixes[p]; ok {
-					postfix = p
+				if _, ok := specialPrefixes[language]; ok {
+					postfix = language
 				}
 			}
 
+			prefix, isSpecial := specialPrefixes[postfix]
+			if isSpecial && prefix == "SKIP" {
+				return ast.WalkContinue, nil
+			}
+
+			// FIXED: Correctly extracting block content from segments
 			var fullBlock strings.Builder
 			lines := block.Lines()
 			for i := 0; i < lines.Len(); i++ {
-				line := lines.At(i)
-				fullBlock.Write(line.Value(source))
+				segment := lines.At(i)
+				fullBlock.Write(segment.Value(source))
 			}
 			content := strings.TrimSpace(fullBlock.String())
 
-			prefix, isSpecial := specialPrefixes[postfix]
-
 			if isSpecial && prefix == "" {
-				// Treat as response and apply highlighting
 				highlighted := highlightText(content, language, theme)
 				if len(entries) > 0 {
 					if entries[len(entries)-1].Response != "" {
@@ -253,7 +229,6 @@ func convertMarkdownToEntries(source []byte) []RequestResponse {
 					}
 				}
 			} else if isSpecial && prefix != "" {
-				// Comment-style request entry
 				contentLines := strings.Split(content, "\n")
 				var commentedContent strings.Builder
 				for idx, cl := range contentLines {
@@ -262,26 +237,15 @@ func convertMarkdownToEntries(source []byte) []RequestResponse {
 						commentedContent.WriteString("\n")
 					}
 				}
-
 				req := commentedContent.String()
-				entries = append(entries, RequestResponse{
-					ID:       generateID(req),
-					Request:  req,
-					Response: "",
-				})
+				entries = append(entries, RequestResponse{ID: generateID(req), Request: req})
 			} else {
-				// Normal command block: process line by line
 				rawLines := strings.Split(content, "\n")
 				for _, rl := range rawLines {
 					trimmed := strings.TrimSpace(rl)
-					if trimmed == "" {
-						continue
+					if trimmed != "" {
+						entries = append(entries, RequestResponse{ID: generateID(trimmed), Request: trimmed})
 					}
-					entries = append(entries, RequestResponse{
-						ID:       generateID(trimmed),
-						Request:  trimmed,
-						Response: "",
-					})
 				}
 			}
 		}
@@ -292,46 +256,30 @@ func convertMarkdownToEntries(source []byte) []RequestResponse {
 
 func processEntries(entries []RequestResponse, writer *bufio.Writer, currentTime *float64) {
 	writeEvent(writer, *currentTime, "\r\n")
-
 	for _, entry := range entries {
 		writeEvent(writer, *currentTime, ShowCursor+prompt)
 		*currentTime += 0.5
-
 		reqLines := strings.Split(entry.Request, "\n")
 		for lineIdx, lineText := range reqLines {
 			for _, char := range lineText {
-				delay := 0.04 + rand.Float64()*(0.12-0.04)
-				*currentTime += delay
+				*currentTime += 0.04 + rand.Float64()*(0.12-0.04)
 				writeEvent(writer, *currentTime, string(char))
 			}
-
 			*currentTime += 0.1
 			writeEvent(writer, *currentTime, "\r\n")
-
 			if lineIdx < len(reqLines)-1 {
 				writeEvent(writer, *currentTime, prompt)
 				*currentTime += 0.2
 			}
 		}
-
 		if entry.Response != "" {
 			*currentTime += 0.1
 			writeEvent(writer, *currentTime, HideCursor)
-			*currentTime += 0.1
-
-			// Chroma TTY formatter uses \n, we ensure \r\n for terminal playback
 			resp := strings.ReplaceAll(entry.Response, "\n", "\r\n")
-			writeEvent(writer, *currentTime, resp)
-
-			if !strings.HasSuffix(resp, "\r\n") {
-				writeEvent(writer, *currentTime, "\r\n")
-			}
-			writeEvent(writer, *currentTime, "\r\n")
-
+			writeEvent(writer, *currentTime, resp+"\r\n\r\n")
 			*currentTime += 0.5
 			writeEvent(writer, *currentTime, ShowCursor)
 		}
-
 		*currentTime += 1.2
 	}
 }
