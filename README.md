@@ -7,6 +7,8 @@
 
 `mtv` is a powerful CLI tool designed to transform Markdown documents into professional-grade terminal recordings (`.cast` files). It automates the process of "typing" commands and displaying syntax-highlighted outputs, making it perfect for creating documentation demos, tutorials, and lab walkthroughs.
 
+<img src="https://github.com/cmdlinezero/clz-mtv/blob/main/screenshots/jq-csv.gif" width="600">
+
 ## Features
 
 * **Automated Typing**: Simulates natural human typing speeds with randomized delays.
