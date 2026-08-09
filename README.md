@@ -8,7 +8,7 @@
 
 `mtv` is a powerful CLI tool designed to transform Markdown documents into professional-grade terminal recordings (`.cast` files). It automates the process of "typing" commands and displaying syntax-highlighted outputs, making it perfect for creating documentation demos, tutorials, and lab walkthroughs.
 
-<img src="https://github.com/cmdlinezero/clz-mtv/blob/main/screenshots/jq-csv.gif" width="600">
+<img src="https://github.com/cmdlinezero/clz-mtv/blob/main/screenshots/mtv.gif" width="600">
 
 ## Features
 
@@ -43,6 +43,21 @@ This step "records" the session based on the JSON schema.
 
 ```bash
 ./mtv generate -i commands.json -o demo.cast --prompt "rosera@labdemo.app:~$ "
+```
+
+### 3. Create an asciinema video for the demo
+This step plays the generated cast file using the asciinema utiity.
+
+```bash
+asciinema play demo.cast
+```
+
+### 4. (OPTIONAL) Generate a GIF
+
+This step is optional and is used to generate a GIF for the demo.
+
+```bash
+agg --font-size 32 demo.cast demo.gif
 ```
 
 ## Markdown Syntax Guide
