@@ -42,8 +42,8 @@ var specialPrefixes = map[string]string{
 	"yaml":       "",
 	"dockerfile": "",
 	"json":       "",
-	"bash":       "",
-	"sh":         "",
+//	"bash":       "",
+//	"sh":         "",
 	"sql":        "",
 	"mermaid":    "SKIP",
 }
@@ -179,6 +179,8 @@ func runGenerate(cmd *cobra.Command, args []string) {
 	var currentTime float64 = 0.5
 	processEntries(entries, writer, &currentTime)
 	writeEvent(writer, currentTime+2.0, "")
+
+	fmt.Printf("Successfully converted %s to %s\n", inputFile, outputFile)
 }
 
 func convertMarkdownToEntries(source []byte) []RequestResponse {
@@ -239,15 +241,19 @@ func convertMarkdownToEntries(source []byte) []RequestResponse {
 				}
 				req := commentedContent.String()
 				entries = append(entries, RequestResponse{ID: generateID(req), Request: req})
-			} else {
-				rawLines := strings.Split(content, "\n")
-				for _, rl := range rawLines {
-					trimmed := strings.TrimSpace(rl)
-					if trimmed != "" {
-						entries = append(entries, RequestResponse{ID: generateID(trimmed), Request: trimmed})
-					}
-				}
-			}
+
+        } else {
+         rawLines := strings.Split(content, "\n")
+         for _, rl := range rawLines {
+           trimmed := strings.TrimSpace(rl)
+           if trimmed != "" {
+             // Apply Chroma highlighting to the request command
+             highlighted := highlightText(trimmed, language, theme)
+             entries = append(entries, RequestResponse{ID: generateID(trimmed), Request: highlighted})
+           }
+         }
+      }
+
 		}
 		return ast.WalkContinue, nil
 	})
